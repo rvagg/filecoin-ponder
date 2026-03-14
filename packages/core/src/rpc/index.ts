@@ -3,7 +3,11 @@ import url from "node:url";
 import type { Common } from "@/internal/common.js";
 import type { Logger } from "@/internal/logger.js";
 import type { Chain, SyncBlock, SyncBlockHeader } from "@/internal/types.js";
-import { eth_getBlockByNumber, standardizeBlock } from "@/rpc/actions.js";
+import {
+  eth_getBlockByNumber,
+  isNullRoundError,
+  standardizeBlock,
+} from "@/rpc/actions.js";
 import { createQueue } from "@/utils/queue.js";
 import { startClock } from "@/utils/timer.js";
 import { wait } from "@/utils/wait.js";
@@ -631,17 +635,26 @@ export const createRpc = ({
           }
 
           if (shouldRetry(error) === false) {
-            logger.warn({
-              msg: "Received JSON-RPC error",
-              chain: chain.name,
-              chain_id: chain.id,
-              hostname: bucket.hostname,
-              request_id: id,
-              method: body.method,
-              request: JSON.stringify(body),
-              duration: endClock(),
-              error,
-            });
+            if (isNullRoundError(error)) {
+              logger.trace({
+                msg: "Skipping null round",
+                chain: chain.name,
+                method: body.method,
+                request: JSON.stringify(body),
+              });
+            } else {
+              logger.warn({
+                msg: "Received JSON-RPC error",
+                chain: chain.name,
+                chain_id: chain.id,
+                hostname: bucket.hostname,
+                request_id: id,
+                method: body.method,
+                request: JSON.stringify(body),
+                duration: endClock(),
+                error,
+              });
+            }
             throw error;
           }
 
@@ -945,6 +958,12 @@ function shouldRetry(error: Error) {
     // eth_call reverted
     if (error.message.includes("revert")) return false;
   }
+  // Chains with "null rounds" (no block at a given height) return an RPC error
+  // rather than null. Retrying will never succeed.
+  if (isNullRoundError(error)) return false;
+  // Lotus gateway lookback limit -- the block is permanently unreachable via
+  // this endpoint, retrying will never succeed.
+  if (error.message.includes("lookback")) return false;
   if (error instanceof HttpRequestError && error.status) {
     // Method Not Allowed
     if (error.status === 405) return false;
