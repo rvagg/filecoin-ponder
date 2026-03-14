@@ -1,67 +1,58 @@
 name: Release
 
+# Publishes @rvagg/ponder to npm using OIDC (Trusted Publishing).
+# No NPM_TOKEN secret needed; npm validates the GitHub OIDC token instead.
+# Set up trusted publishing for the package on npmjs.com first:
+#   npmjs.com -> @rvagg/ponder -> Settings -> Trusted Publishers
+#   Repository: rvagg/filecoin-ponder
+#   Workflow: .github/workflows/release.yml
+#
+# Triggers:
+#   - workflow_dispatch: manual run, optionally publish under an npm dist-tag
+#     (e.g. "next") to keep "latest" untouched. Useful for smoke testing.
+#   - push of a v* tag (e.g. v0.16.7): publishes whatever version is in
+#     packages/core/package.json under the "latest" dist-tag.
+#
+# Workflow expects packages/core/package.json's "version" field to already
+# match upstream ponder's release. This is the natural state after a clean
+# rebase on upstream/main.
+
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      dist-tag:
+        description: 'npm dist-tag to publish under (default: latest)'
+        required: false
+        default: 'latest'
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  release:
-    if: github.event_name != 'workflow_dispatch'
-    name: Release
+  publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
       id-token: write
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v5
-        with:
-          # This fetches the entire Git history so that Changesets can generate changelogs with the correct commits.
-          fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Build
-        run: pnpm build
+      - name: Build packages
+        run: pnpm --filter '@rvagg/ponder...' build
 
-      - name: Create release pull request or publish to npm
-        id: changesets
-        uses: changesets/action@v1.7.0
-        with:
-          title: "chore: version packages"
-          commit: "chore: version packages"
-          version: pnpm changeset:version
-          publish: pnpm changeset:release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  snapshot:
-    if: github.event_name == 'workflow_dispatch'
-    name: Release snapshot version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v5
-
-      - name: Setup
-        uses: ./.github/actions/setup
-
-      - name: Build
-        run: pnpm build
-
-      - name: Create release pull request or publish to npm
-        continue-on-error: true
+      - name: Determine dist-tag
+        id: tag
         run: |
-          snapshot=$(git branch --show-current | tr -cs '[:alnum:]-' '-' | tr '[:upper:]' '[:lower:]' | sed 's/-$//')
-          pnpm changeset version --no-git-tag --snapshot $snapshot
-          pnpm changeset publish --no-git-tag --snapshot $snapshot --tag $snapshot
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.dist-tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish @rvagg/ponder
+        working-directory: packages/core
+        run: pnpm publish --access public --provenance --no-git-checks --tag ${{ steps.tag.outputs.value }}

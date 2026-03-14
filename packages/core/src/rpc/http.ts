@@ -27,7 +27,7 @@ export function getHttpRpcClient(
   options: HttpRpcClientOptions & { common: Common; chain: Chain },
 ): HttpRpcClient {
   const { common, chain } = options;
-  const timeoutMs = options?.timeout ?? 10_000;
+  const timeoutMs = options?.timeout ?? 20_000;
   let id = 1;
   return {
     async request(params) {

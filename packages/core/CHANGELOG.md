@@ -1,5 +1,11 @@
 # ponder
 
+## 0.17.4-filecoin.2
+
+### Patch Changes
+
+- Chunk `eth_getLogs` to the block range maximum Lotus states in its error instead of retrying the same range indefinitely. Lotus's `MaxFilterHeightRange` (default 2880) is not a pattern `@ponder/utils` recognises.
+
 ## 0.17.4
 
 ### Patch Changes
