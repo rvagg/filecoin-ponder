@@ -1,13 +1,17 @@
 {
-  "name": "ponder",
-  "version": "0.16.6",
-  "description": "An open-source TypeScript framework for EVM data indexing",
+  "name": "@rvagg/ponder",
+  "version": "0.16.6-filecoin.1",
+  "description": "Filecoin-compatible fork of ponder. An open-source TypeScript framework for EVM data indexing.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ponder-sh/ponder",
+    "url": "https://github.com/rvagg/filecoin-ponder",
     "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "files": [
     "dist",

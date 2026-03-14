@@ -1,182 +1,83 @@
-# Ponder
+# filecoin-ponder
 
-[![CI status][ci-badge]][ci-url]
-[![Version][version-badge]][version-url]
-[![Telegram chat][tg-badge]][tg-url]
-[![License][license-badge]][license-url]
+A fork of [ponder-sh/ponder](https://github.com/ponder-sh/ponder) with patches for Filecoin EVM (FVM) compatibility. Published to npm as **[`@rvagg/ponder`](https://www.npmjs.com/package/@rvagg/ponder)**.
 
-Ponder is an open-source TypeScript framework for EVM data indexing.
-
-## Documentation
-
-Visit [ponder.sh](https://ponder.sh) for documentation, guides, and the API reference.
-
-## Support
-
-Join [Ponder's telegram chat](https://t.me/pondersh) for support, feedback, and general chatter.
-
-## Features
-
-* Index any contract or account on any EVM-compatible chain
-* Write indexed data to Postgres
-* Query indexed data over HTTP using GraphQL or SQL
-* Build rapidly with a powerful local development server
-* Deploy anywhere that runs Node.js or Bun
-
-## Quickstart
-
-### 1. Run `create-ponder`
-
-You will be asked for a project name, and if you are using a [template](https://ponder.sh/docs/api-reference/create-ponder#templates) (recommended).
-
-After the prompts, the CLI will create a project directory, install dependencies, and initialize a git repository.
-
-```bash
-bun create ponder
-# or
-pnpm create ponder
-# or
-npm init ponder@latest
-```
-
-### 2. Start the development server
-
-Ponder has a development server that automatically reloads when you save changes in any project file. It also prints `console.log` statements and errors encountered while running your code.
-
-First, `cd` into your project directory, then start the server.
-
-```bash
-bun dev
-# or
-pnpm dev
-# or
-npm run dev
-```
-
-### 3. Specify contracts & chains
-
-Ponder fetches event logs for the contracts in `ponder.config.ts`, and passes those events to the indexing functions you write.
-
-```ts
-// ponder.config.ts
-
-import { createConfig } from "ponder";
-import { BaseRegistrarAbi } from "./abis/BaseRegistrar";
- 
-export default createConfig({
-  chains: {
-    mainnet: { 
-      id: 1,
-      rpc: "https://eth-mainnet.g.alchemy.com/v2/...",
-    },
-  },
-  contracts: {
-    BaseRegistrar: {
-      abi: BaseRegistrarAbi,
-      chain: "mainnet",
-      address: "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
-      startBlock: 9380410,
-    },
-  },
-});
-```
-
-### 4. Define your schema
-
-The `ponder.schema.ts` file specifies the database schema, which should match the shape of your application's data model.
-
-```ts
-// ponder.schema.ts
-
-import { onchainTable } from "ponder";
-
-export const ensName = onchainTable("ens_name", (t) => ({
-  name: p.text().primaryKey(),
-  owner: p.text().notNull(),
-  registeredAt: p.integer().notNull(),
-}));
-```
-
-### 5. Write indexing functions
-
-Files in the `src/` directory contain **indexing functions**, which are TypeScript functions that process a contract event. The purpose of these functions is to write indexed data to the database.
-
-```ts
-// src/BaseRegistrar.ts
-
-import { ponder } from "ponder:registry";
-import schema from "ponder:schema";
-
-ponder.on("BaseRegistrar:NameRegistered", async ({ event, context }) => {
-  const { name, owner } = event.params;
-
-  await context.db.insert(schema.ensName).values({
-    name: name,
-    owner: owner,
-    registeredAt: event.block.timestamp,
-  });
-});
-```
-
-### 6. Query the GraphQL API
-
-Ponder automatically generates a GraphQL API based on your `ponder.schema.ts` file. The API serves data that you inserted in your indexing functions.
-
-```ts
-{
-  ensNames(limit: 2) {
-    items {
-      name
-      owner
-      registeredAt
-    }
-  }
-}
-```
+Recommended install pattern uses an npm alias so source code keeps importing from `"ponder"`:
 
 ```json
 {
-  "ensNames": {
-    "items": [
-      {
-        "name": "vitalik.eth",
-        "owner": "0x0904Dac3347eA47d208F3Fd67402D039a3b99859",
-        "registeredAt": 1580345271
-      },
-      {
-        "name": "joe.eth",
-        "owner": "0x6109DD117AA5486605FC85e040ab00163a75c662",
-        "registeredAt": 1580754710
-      }
-    ]
+  "dependencies": {
+    "ponder": "npm:@rvagg/ponder@^0.16.6"
   }
 }
 ```
 
-That's it! Visit [ponder.sh](https://ponder.sh) for documentation, guides for deploying to production, and the API reference.
+```bash
+npm install
+```
 
-## Contributing
+The package's internal type declarations self-reference the original `"ponder"` name, so installing under that local name keeps virtual modules and type imports resolving correctly. See the [package README](packages/core/README.md#install) for the alternative (direct scope install + tsconfig paths).
 
-If you're interested in contributing to Ponder, please read the [contribution guide](/.github/CONTRIBUTING.md).
+If you're indexing on Ethereum, Base, Arbitrum, or any other standard EVM chain, this fork will work but [upstream `ponder`](https://www.npmjs.com/package/ponder) would be the better choice. This fork exists only to unblock Filecoin (chains 314 and 314159).
 
-## Packages
+## What's different
 
-- [`ponder`](https://www.npmjs.com/package/ponder)
-- [`@ponder/client`](https://www.npmjs.com/package/@ponder/client)
-- [`@ponder/react`](https://www.npmjs.com/package/@ponder/react)
-- [`@ponder/utils`](https://www.npmjs.com/package/@ponder/utils)
-- [`create-ponder`](https://www.npmjs.com/package/create-ponder)
-- [`eslint-config-ponder`](https://www.npmjs.com/package/eslint-config-ponder)
+Patches on top of upstream `main` (one commit) addressing Filecoin EVM incompatibilities:
 
-## About
+**1. Null round handling.** Filecoin has "null rounds" where no block is produced for an epoch. Lotus returns RPC error code 12 for these, which upstream Ponder treats as a fatal error. `isNullRoundError()` detects null rounds and skips them in both historical and realtime sync paths.
 
-Ponder is MIT-licensed open-source software.
+**2. logsBloom validation bypass.** FVM fills all logsBloom bits to 1 regardless of actual log content. Upstream Ponder validates that a non-zero logsBloom implies non-empty logs, which fails on every Filecoin block without events. The check is skipped for Filecoin chain IDs (314, 314159).
 
-[ci-badge]: https://github.com/ponder-sh/ponder/actions/workflows/main.yml/badge.svg
-[ci-url]: https://github.com/ponder-sh/ponder/actions/workflows/main.yml
-[tg-badge]: https://img.shields.io/endpoint?color=neon&logo=telegram&label=chat&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fpondersh
-[tg-url]: https://t.me/pondersh
-[license-badge]: https://img.shields.io/npm/l/ponder?label=License
-[license-url]: https://github.com/ponder-sh/ponder/blob/main/LICENSE
-[version-badge]: https://img.shields.io/npm/v/ponder
-[version-url]: https://github.com/ponder-sh/ponder/releases
+**3. Start block lookback fallback.** Ponder fetches the config's `startBlock` on every restart for the sync progress anchor. On RPC endpoints with limited history (Lotus gateway has a 24h or 7d window), this fails once the start block ages past the lookback limit. The fork synthesizes a placeholder block on lookback failure, allowing Ponder to resume from its checkpoint without needing full-history RPC access.
+
+**4. RPC timeout raised from 10s to 20s.** Upstream's hardcoded 10s timeout in `rpc/index.ts` and `rpc/http.ts` is occasionally tight for blocks with unusually large event payloads (observed during calibnet testing under pathological workloads). 20s gives margin without changing the API.
+
+Filecoin chain IDs are wired into `utils/finality.ts` with 900-block finality.
+
+The corresponding upstream PR was [ponder-sh/ponder#2282](https://github.com/ponder-sh/ponder/pull/2282), rejected because the maintainers preferred a different approach. This fork exists to unblock Filecoin usage in the meantime.
+
+## Known Filecoin limitations (not fixed here)
+
+- **Bloom filter optimization defeated.** FVM's all-ones logsBloom means Ponder can't skip blocks based on the filter. Every block triggers an `eth_getLogs` call. Performance impact only, not correctness.
+- **Traces don't work.** Ponder uses `debug_traceBlockByHash` (Geth format). Lotus only supports `trace_block` (OpenEthereum format). Trace handlers and transfer handlers won't function on Filecoin.
+
+## Versioning
+
+Versions mirror upstream `ponder`. `@rvagg/ponder@0.16.6` corresponds to upstream's `ponder@0.16.6` plus the Filecoin patches. New releases are cut after rebasing the fork onto each upstream tag.
+
+## Maintaining the fork
+
+### Rebase on upstream
+
+```bash
+git fetch upstream
+git rebase upstream/main
+# Expect a one-line conflict in packages/core/package.json (the "name" field)
+git push origin main --force-with-lease
+```
+
+The `upstream` remote should point at `https://github.com/ponder-sh/ponder.git`.
+
+### Cut a release
+
+Releases are tag-driven. After rebasing onto a new upstream version:
+
+```bash
+# Verify packages/core/package.json's "version" matches upstream's tagged release
+git tag v0.16.7
+git push origin v0.16.7
+```
+
+The `Release` workflow (`.github/workflows/release.yml`) fires on `v*` tags and publishes via OIDC trusted publishing, so no `NPM_TOKEN` is required. The same workflow can be run via `workflow_dispatch` to publish under an arbitrary npm dist-tag (e.g. `next`) for testing.
+
+### What's published
+
+Only `packages/core` is published, as `@rvagg/ponder`. Its runtime dependency on `@ponder/utils` resolves to upstream's published version (`@ponder/utils@0.2.18` at time of writing). No separate fork of utils is needed because this fork hasn't touched `packages/utils/`.
+
+## Where this is used
+
+The [foc-observer](https://github.com/FilOzone/foc-observer) project uses this fork to index Filecoin smart contract events. The `indexer/` Dockerfile installs it from npm.
+
+## Upstream documentation
+
+For Ponder API reference, configuration, schema definition, and indexing-function patterns, see [ponder.sh](https://ponder.sh) and the [upstream repo](https://github.com/ponder-sh/ponder).

@@ -10,6 +10,7 @@ import type {
 } from "@/internal/types.js";
 import type { RequestParameters, Rpc } from "@/rpc/index.js";
 import { zeroLogsBloom } from "@/sync-realtime/bloom.js";
+import { isFilecoinChain } from "@/utils/finality.js";
 import { PG_BIGINT_MAX, PG_INTEGER_MAX } from "@/utils/pg.js";
 import {
   BlockNotFoundError,
@@ -21,6 +22,49 @@ import {
   zeroAddress,
   zeroHash,
 } from "viem";
+
+/**
+ * Returns true if the error indicates a null round (an epoch with no block).
+ * Matches RPC error code 12 or a "null round" error message.
+ */
+export function isNullRoundError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    // Filecoin null rounds return RPC error code 12
+    if (
+      "cause" in error &&
+      error.cause &&
+      typeof error.cause === "object" &&
+      "code" in error.cause &&
+      error.cause.code === 12
+    ) {
+      return true;
+    }
+    // Check the error message as a fallback
+    if (
+      "message" in error &&
+      typeof error.message === "string" &&
+      error.message.includes("null round")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns true if the error indicates that a block does not exist.
+ * Handles both viem's BlockNotFoundError (null response) and Filecoin's
+ * RPC error code 12 ("requested epoch was a null round").
+ */
+export function isBlockNotFoundError(error: unknown): boolean {
+  if (error instanceof BlockNotFoundError) return true;
+  if (error && typeof error === "object") {
+    if ("cause" in error && error.cause instanceof BlockNotFoundError) {
+      return true;
+    }
+  }
+  return isNullRoundError(error);
+}
 
 /**
  * Helper function for "eth_getBlockByNumber" request.
@@ -350,6 +394,8 @@ export const validateTransactionsAndBlock = (
  *
  * @dev Allows `log.transactionHash` to be `zeroHash`.
  * @dev Allows `block.logsBloom` to be `zeroLogsBloom`.
+ * @dev Filecoin FVM fills all logsBloom bits regardless of actual logs.
+ *      The logsBloom vs empty-logs check is skipped for Filecoin chains.
  */
 export const validateLogsAndBlock = (
   logs: SyncLog[],
@@ -359,8 +405,15 @@ export const validateLogsAndBlock = (
     RequestParameters,
     { method: "eth_getBlockByNumber" | "eth_getBlockByHash" }
   >,
+  chainId?: number,
 ) => {
-  if (block.logsBloom !== zeroLogsBloom && logs.length === 0) {
+  // Filecoin FVM sets all logsBloom bits to 1, defeating bloom filter
+  // optimizations. A non-zero logsBloom with zero logs is normal on Filecoin.
+  if (
+    block.logsBloom !== zeroLogsBloom &&
+    logs.length === 0 &&
+    !(chainId !== undefined && isFilecoinChain(chainId))
+  ) {
     const error = new RpcProviderError(
       `Inconsistent RPC response data. The logs array has length 0, but the associated block has a non-empty 'block.logsBloom'.`,
     );

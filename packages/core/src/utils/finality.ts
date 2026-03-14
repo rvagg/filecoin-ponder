@@ -31,10 +31,21 @@ export function getFinalityBlockCount({ chain }: { chain: Chain | undefined }) {
     case 421613:
       finalityBlockCount = 240;
       break;
+    // Filecoin (30-second block time, ~900 epochs for tipset finality).
+    // With F3 active, finality is near-instant, but 900 is the safe default.
+    case 314:
+    case 314159:
+      finalityBlockCount = 900;
+      break;
     default:
       // Assume a 2-second block time, e.g. OP stack chains.
       finalityBlockCount = 30;
   }
 
   return finalityBlockCount;
+}
+
+/** Filecoin mainnet (314) and calibnet (314159). */
+export function isFilecoinChain(chainId: number): boolean {
+  return chainId === 314 || chainId === 314159;
 }

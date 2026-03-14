@@ -127,17 +127,36 @@ export async function getLocalSyncProgress(params: {
     cachedIntervals: params.cachedIntervals,
   });
 
+  // Fetch the start block for syncProgress.start. On chains with limited
+  // lookback (e.g. Filecoin gateways), the start block may be beyond the
+  // RPC's history window. Fall back to a synthetic block using config data.
+  const fetchStartBlock = () =>
+    eth_getBlockByNumber(params.rpc, [numberToHex(start), false], {
+      retryNullBlockRequest: true,
+    }).catch((error) => {
+      // If the RPC can't serve this old block (lookback limit), use a
+      // synthetic placeholder. The start checkpoint only needs number and
+      // approximate timestamp; hash is not critical for resumption.
+      if (
+        error instanceof Error &&
+        (error.message.includes("lookback") ||
+          error.message.includes("not found"))
+      ) {
+        return {
+          hash: `0x${"0".repeat(64)}` as `0x${string}`,
+          parentHash: `0x${"0".repeat(64)}` as `0x${string}`,
+          number: numberToHex(start) as `0x${string}`,
+          timestamp: "0x0" as `0x${string}`,
+        } satisfies LightBlock;
+      }
+      throw error;
+    });
+
   const diagnostics = await Promise.all(
     cached === undefined
-      ? [
-          eth_getBlockByNumber(params.rpc, [numberToHex(start), false], {
-            retryNullBlockRequest: true,
-          }),
-        ]
+      ? [fetchStartBlock()]
       : [
-          eth_getBlockByNumber(params.rpc, [numberToHex(start), false], {
-            retryNullBlockRequest: true,
-          }),
+          fetchStartBlock(),
           eth_getBlockByNumber(params.rpc, [numberToHex(cached), false], {
             retryNullBlockRequest: true,
           }),
