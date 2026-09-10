@@ -1,6 +1,6 @@
 {
   "name": "@rvagg/ponder",
-  "version": "0.17.4-filecoin.1",
+  "version": "0.17.4-filecoin.2",
   "description": "Filecoin-compatible fork of ponder. An open-source TypeScript framework for EVM data indexing.",
   "license": "MIT",
   "type": "module",
