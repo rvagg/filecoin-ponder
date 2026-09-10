@@ -1,9 +1,7 @@
 import crypto, { type UUID } from "node:crypto";
 import url from "node:url";
-import {
-  type GetLogsRetryHelperParameters,
-  getLogsRetryHelper,
-} from "@ponder/utils";
+import type { GetLogsRetryHelperParameters } from "@ponder/utils";
+import { getLogsRetryHelper } from "@/utils/getLogsRetryHelper.js";
 import {
   BlockNotFoundError,
   custom,

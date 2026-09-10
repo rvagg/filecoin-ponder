@@ -1,4 +1,4 @@
-import { getLogsRetryHelper } from "@ponder/utils";
+import { getLogsRetryHelper } from "@/utils/getLogsRetryHelper.js";
 import {
   type Address,
   type Hash,
